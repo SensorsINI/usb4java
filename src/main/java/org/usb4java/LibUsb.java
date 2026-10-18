@@ -96,6 +96,34 @@ public final class LibUsb
      */
     public static final int OPTION_USE_USBDK = 1;
 
+    /**
+     * Skip device scanning during {@link #initContext}. Useful with
+     * {@link #wrapSysDevice}. Only has an effect on Linux. Set this through
+     * {@link #initContext}, not after init.
+     */
+    public static final int OPTION_NO_DEVICE_DISCOVERY = 2;
+
+    /**
+     * Log callback option value inside libusb. Do not pass this to
+     * {@link #initContext} or {@link #setOption}. Use {@link #setLogCallback}.
+     */
+    public static final int OPTION_LOG_CB = 3;
+
+    /** Deliver every log line to {@link #setLogCallback}. */
+    public static final int LOG_CB_GLOBAL = 1;
+
+    /** Deliver context log lines to {@link #setLogCallback}. */
+    public static final int LOG_CB_CONTEXT = 2;
+
+    /** Manufacturer string, readable without opening the device. */
+    public static final int DEVICE_STRING_MANUFACTURER = 0;
+
+    /** Product string, readable without opening the device. */
+    public static final int DEVICE_STRING_PRODUCT = 1;
+
+    /** Serial number string, readable without opening the device. */
+    public static final int DEVICE_STRING_SERIAL_NUMBER = 2;
+
 
     // Error codes. Most libusb functions return 0 on success or one of these
     // codes on failure. You can call errorName() to retrieve a string
@@ -166,6 +194,12 @@ public final class LibUsb
     /** The device is operating at super speed plus (10000MBit/s). */
     public static final int SPEED_SUPER_PLUS = 5;
 
+    /**
+     * The device is operating at super speed plus x2 (20000MBit/s).
+     * USB 3.2 Gen 2x2. Added in libusb 1.0.28.
+     */
+    public static final int SPEED_SUPER_PLUS_X2 = 6;
+
 
     // Supported speeds (wSpeedSupported) bitfield. Indicates what speeds the
     // device supports.
@@ -207,6 +241,45 @@ public final class LibUsb
 
     /** Container ID type. */
     public static final byte BT_CONTAINER_ID = 4;
+
+    /** Platform descriptor capability. */
+    public static final byte BT_PLATFORM_DESCRIPTOR = 5;
+
+    /**
+     * SuperSpeedPlus device capability. USB 3.1 / 3.2 lane speeds live here,
+     * not in {@link #BT_SS_USB_DEVICE_CAPABILITY}.
+     */
+    public static final byte BT_SUPERSPEED_PLUS_CAPABILITY = 0x0A;
+
+    /** Symmetric sublink speed. */
+    public static final int SSPLUS_ATTR_TYPE_SYM = 0;
+
+    /** Asymmetric sublink speed. */
+    public static final int SSPLUS_ATTR_TYPE_ASYM = 1;
+
+    /** Receive direction. */
+    public static final int SSPLUS_ATTR_DIR_RX = 0;
+
+    /** Transmit direction. */
+    public static final int SSPLUS_ATTR_DIR_TX = 1;
+
+    /** Sublink exponent: bits per second. */
+    public static final int SSPLUS_ATTR_EXP_BPS = 0;
+
+    /** Sublink exponent: kilobits per second. */
+    public static final int SSPLUS_ATTR_EXP_KBS = 1;
+
+    /** Sublink exponent: megabits per second. */
+    public static final int SSPLUS_ATTR_EXP_MBS = 2;
+
+    /** Sublink exponent: gigabits per second. */
+    public static final int SSPLUS_ATTR_EXP_GBS = 3;
+
+    /** Sublink protocol: SuperSpeed. */
+    public static final int SSPLUS_ATTR_PROT_SS = 0;
+
+    /** Sublink protocol: SuperSpeedPlus. */
+    public static final int SSPLUS_ATTR_PROT_SSPLUS = 1;
 
     // Standard requests, as defined in table 9-5 of the USB 3.0 specifications.
 
@@ -406,6 +479,13 @@ public final class LibUsb
     public static final byte DT_ENDPOINT = 0x05;
 
     /**
+     * Interface Association Descriptor.
+     *
+     * @see InterfaceAssociationDescriptor
+     */
+    public static final byte DT_INTERFACE_ASSOCIATION = 0x0B;
+
+    /**
      * BOS descriptor.
      *
      * @see BosDescriptor
@@ -480,6 +560,15 @@ public final class LibUsb
 
     /** Size of a BOS descriptor. */
     public static final byte BT_CONTAINER_ID_SIZE = 20;
+
+    /** Fixed portion of a SuperSpeedPlus device capability descriptor. */
+    public static final byte BT_SSPLUS_USB_DEVICE_CAPABILITY_SIZE = 12;
+
+    /** Minimum size of a platform capability descriptor. */
+    public static final byte BT_PLATFORM_DESCRIPTOR_MIN_SIZE = 20;
+
+    /** Size of an interface association descriptor. */
+    public static final byte DT_INTERFACE_ASSOCIATION_SIZE = 8;
 
     /** We unwrap the BOS => define its maximum size. */
     public static final byte DT_BOS_MAX_SIZE = DT_BOS_SIZE
@@ -678,6 +767,13 @@ public final class LibUsb
         ImmutablePair<HotplugCallback, Object>> hotplugCallbacks =
         new ConcurrentHashMap<Long, ImmutablePair<HotplugCallback, Object>>();
 
+    /** Global libusb log callback. Null when logging is not redirected. */
+    private static volatile LogCallback globalLogCallback;
+
+    /** Per-context log callbacks, keyed by the context native pointer. */
+    private static final ConcurrentMap<Long, LogCallback> contextLogCallbacks =
+        new ConcurrentHashMap<Long, LogCallback>();
+
     /**
      * Pollfd listeners (to support different listeners for different contexts).
      */
@@ -721,6 +817,27 @@ public final class LibUsb
      * @return 0 on success or a error code on failure.
      */
     public static synchronized native int init(final Context context);
+
+    /**
+     * Initialize libusb and apply integer options while the context is created.
+     *
+     * {@link #init(Context)} remains valid and is what existing callers use.
+     * Pass null arrays to apply no options. {@link #OPTION_LOG_CB} is rejected;
+     * call {@link #setLogCallback} after init. {@link #OPTION_USE_USBDK} and
+     * {@link #OPTION_NO_DEVICE_DISCOVERY} belong here, not in a later
+     * {@link #setOption} call.
+     *
+     * @param context
+     *            Optional output location for context pointer. Null uses the
+     *            default context.
+     * @param options
+     *            Option ids, or null.
+     * @param values
+     *            Integer values parallel to {@code options}, or null.
+     * @return 0 on success or an error code on failure.
+     */
+    public static synchronized native int initContext(final Context context,
+        final int[] options, final int[] values);
 
     /**
      * Deinitialize libusb.
@@ -804,6 +921,77 @@ public final class LibUsb
      *         {@link #ERROR_NOT_SUPPORTED} if the option is valid but not supported on this platform.
      */
     public static native int setOption(final Context context, final int option, final int value);
+
+    /**
+     * Register or clear a log callback.
+     *
+     * Pass a null callback to stop delivery for the selected mode. This does
+     * not change log verbosity; use {@link #OPTION_LOG_LEVEL} for that.
+     *
+     * @param context
+     *            Context for {@link #LOG_CB_CONTEXT}. Must be null only when
+     *            {@code mode} is {@link #LOG_CB_GLOBAL}.
+     * @param callback
+     *            Callback, or null to clear the selected mode.
+     * @param mode
+     *            {@link #LOG_CB_GLOBAL}, {@link #LOG_CB_CONTEXT}, or both.
+     */
+    public static synchronized void setLogCallback(final Context context,
+        final LogCallback callback, final int mode)
+    {
+        if ((mode & LOG_CB_CONTEXT) != 0 && context == null)
+        {
+            throw new IllegalArgumentException(
+                "context must not be null for LOG_CB_CONTEXT");
+        }
+        if ((mode & LOG_CB_GLOBAL) != 0)
+        {
+            globalLogCallback = callback;
+        }
+        if ((mode & LOG_CB_CONTEXT) != 0)
+        {
+            if (callback == null)
+            {
+                contextLogCallbacks.remove(Long.valueOf(context.getPointer()));
+            }
+            else
+            {
+                contextLogCallbacks.put(Long.valueOf(context.getPointer()), callback);
+            }
+        }
+        setLogCallbackNative(context, mode, callback != null);
+    }
+
+    /**
+     * Called from native code when libusb emits a log line.
+     *
+     * @param context
+     *            Related context, or null for a global line.
+     * @param level
+     *            Log level.
+     * @param message
+     *            Log text.
+     */
+    static void logCallback(final Context context, final int level,
+        final String message)
+    {
+        LogCallback callback = null;
+        if (context != null)
+        {
+            callback = contextLogCallbacks.get(Long.valueOf(context.getPointer()));
+        }
+        if (callback == null)
+        {
+            callback = globalLogCallback;
+        }
+        if (callback != null)
+        {
+            callback.onLog(context, level, message);
+        }
+    }
+
+    private static native void setLogCallbackNative(final Context context,
+        final int mode, final boolean enabled);
 
     /**
      * Returns the version of the libusb runtime.
@@ -995,6 +1183,24 @@ public final class LibUsb
         final byte endpoint);
 
     /**
+     * Maximum packet size of an endpoint on a specific alternate setting,
+     * not only the active one. Added in libusb 1.0.27.
+     *
+     * @param device
+     *            A device.
+     * @param interfaceNumber
+     *            Interface number.
+     * @param alternateSetting
+     *            Alternate setting.
+     * @param endpoint
+     *            Endpoint address.
+     * @return Packet size, or a negative {@code ERROR_*} code.
+     */
+    public static native int getMaxAltPacketSize(final Device device,
+        final int interfaceNumber, final int alternateSetting,
+        final byte endpoint);
+
+    /**
      * Increment the reference count of a device.
      *
      * @param device
@@ -1037,6 +1243,68 @@ public final class LibUsb
      */
     public static native int open(final Device device,
         final DeviceHandle handle);
+
+    /**
+     * Wrap an already-open platform device handle. On Linux {@code sysDev} is
+     * a file descriptor. The resulting {@link DeviceHandle} is closed with
+     * {@link #close(DeviceHandle)} like any other handle.
+     *
+     * @param context
+     *            Context, or null for the default context.
+     * @param sysDev
+     *            Operating-system device handle.
+     * @param handle
+     *            Output handle. Only set when the return code is 0.
+     * @return 0 on success, or an error code.
+     */
+    public static native int wrapSysDevice(final Context context,
+        final long sysDev, final DeviceHandle handle);
+
+    /**
+     * Operating-system session identifier for a device. The meaning is
+     * platform-specific. Added in libusb 1.0.30.
+     *
+     * @param device
+     *            A device.
+     * @return The session value.
+     */
+    public static native long getSessionData(final Device device);
+
+    /**
+     * Read a cached device string without opening the device. Added in
+     * libusb 1.0.30. The string is UTF-8.
+     *
+     * @param device
+     *            A device.
+     * @param stringType
+     *            {@link #DEVICE_STRING_MANUFACTURER},
+     *            {@link #DEVICE_STRING_PRODUCT}, or
+     *            {@link #DEVICE_STRING_SERIAL_NUMBER}.
+     * @param data
+     *            Buffer that receives the string on success.
+     * @return 0 or a positive length on success, or a negative error code.
+     */
+    public static native int getDeviceString(final Device device,
+        final int stringType, final StringBuffer data);
+
+    /**
+     * Read a cached device string without opening the device.
+     *
+     * @param device
+     *            A device.
+     * @param stringType
+     *            One of the {@code DEVICE_STRING_*} constants.
+     * @return The string, or null if libusb returned an error.
+     */
+    public static String getDeviceString(final Device device, final int stringType)
+    {
+        final StringBuffer data = new StringBuffer();
+        if (getDeviceString(device, stringType, data) < 0)
+        {
+            return null;
+        }
+        return data.toString();
+    }
 
     /**
      * Convenience function for finding a device with a particular
@@ -1454,6 +1722,49 @@ public final class LibUsb
         final DeviceHandle handle, final boolean enable);
 
     /**
+     * Whether a WinUSB endpoint can use RAW_IO. Opt-in. Do not enable this for
+     * a streaming camera until short-packet handling has been tested. libusb
+     * 1.0.30 exposes these per-endpoint calls; there is no
+     * {@code OPTION_WINUSB_RAW_IO} context option in that release.
+     *
+     * @param handle
+     *            An open device.
+     * @param endpoint
+     *            Endpoint address.
+     * @return 1 if supported, 0 if not, or a negative error code.
+     */
+    public static native int endpointSupportsRawIo(final DeviceHandle handle,
+        final byte endpoint);
+
+    /**
+     * Enable or disable WinUSB RAW_IO on one endpoint. Off unless the caller
+     * asks. See {@link #endpointSupportsRawIo}.
+     *
+     * @param handle
+     *            An open device.
+     * @param endpoint
+     *            Endpoint address.
+     * @param enable
+     *            True to enable RAW_IO.
+     * @return 0 on success, or a negative error code.
+     */
+    public static native int endpointSetRawIo(final DeviceHandle handle,
+        final byte endpoint, final boolean enable);
+
+    /**
+     * Largest transfer WinUSB will accept on an endpoint after RAW_IO is
+     * enabled.
+     *
+     * @param handle
+     *            An open device.
+     * @param endpoint
+     *            Endpoint address.
+     * @return Size in bytes, or a negative error code.
+     */
+    public static native int getMaxRawIoTransferSize(final DeviceHandle handle,
+        final byte endpoint);
+
+    /**
      * Check at runtime if the loaded library has a given capability.
      *
      * @param capability
@@ -1823,6 +2134,98 @@ public final class LibUsb
      */
     public static native void freeSsUsbDeviceCapabilityDescriptor(
         final SsUsbDeviceCapabilityDescriptor ssUsbDeviceCapabilityDescriptor);
+
+    /**
+     * Parse a SuperSpeedPlus device capability descriptor. The parent
+     * capability type must be {@link #BT_SUPERSPEED_PLUS_CAPABILITY}.
+     *
+     * @param context
+     *            The context to operate on, or null for the default context.
+     * @param devCapDescriptor
+     *            BOS device capability whose type is
+     *            {@link #BT_SUPERSPEED_PLUS_CAPABILITY}.
+     * @param descriptor
+     *            Output. Only valid if {@link #SUCCESS} was returned. Free
+     *            with {@link #freeSsPlusUsbDeviceCapabilityDescriptor}.
+     * @return {@link #SUCCESS} on success, or an error code.
+     */
+    public static native int getSsPlusUsbDeviceCapabilityDescriptor(
+        final Context context, final BosDevCapabilityDescriptor devCapDescriptor,
+        final SsPlusUsbDeviceCapabilityDescriptor descriptor);
+
+    /**
+     * Free a descriptor from {@link #getSsPlusUsbDeviceCapabilityDescriptor}.
+     * A null argument is ignored.
+     *
+     * @param descriptor
+     *            The descriptor to free.
+     */
+    public static native void freeSsPlusUsbDeviceCapabilityDescriptor(
+        final SsPlusUsbDeviceCapabilityDescriptor descriptor);
+
+    /**
+     * Parse a platform capability descriptor. The parent capability type must
+     * be {@link #BT_PLATFORM_DESCRIPTOR}.
+     *
+     * @param context
+     *            The context to operate on, or null for the default context.
+     * @param devCapDescriptor
+     *            BOS device capability whose type is
+     *            {@link #BT_PLATFORM_DESCRIPTOR}.
+     * @param descriptor
+     *            Output. Free with {@link #freePlatformDescriptor}.
+     * @return {@link #SUCCESS} on success, or an error code.
+     */
+    public static native int getPlatformDescriptor(final Context context,
+        final BosDevCapabilityDescriptor devCapDescriptor,
+        final PlatformDescriptor descriptor);
+
+    /**
+     * Free a descriptor from {@link #getPlatformDescriptor}. A null argument
+     * is ignored.
+     *
+     * @param descriptor
+     *            The descriptor to free.
+     */
+    public static native void freePlatformDescriptor(
+        final PlatformDescriptor descriptor);
+
+    /**
+     * Interface association descriptors for one configuration index.
+     *
+     * @param device
+     *            A device.
+     * @param configIndex
+     *            Zero-based configuration index.
+     * @param descriptors
+     *            Output. Free with {@link #freeInterfaceAssociationDescriptors}.
+     * @return {@link #SUCCESS} on success, or an error code.
+     */
+    public static native int getInterfaceAssociationDescriptors(
+        final Device device, final byte configIndex,
+        final InterfaceAssociationDescriptors descriptors);
+
+    /**
+     * Interface association descriptors for the active configuration.
+     *
+     * @param device
+     *            A device.
+     * @param descriptors
+     *            Output. Free with {@link #freeInterfaceAssociationDescriptors}.
+     * @return {@link #SUCCESS} on success, or an error code.
+     */
+    public static native int getActiveInterfaceAssociationDescriptors(
+        final Device device, final InterfaceAssociationDescriptors descriptors);
+
+    /**
+     * Free an array from {@link #getInterfaceAssociationDescriptors}. A null
+     * argument is ignored.
+     *
+     * @param descriptors
+     *            The array to free.
+     */
+    public static native void freeInterfaceAssociationDescriptors(
+        final InterfaceAssociationDescriptors descriptors);
 
     /**
      * Get a Container ID descriptor.

@@ -8,6 +8,22 @@
     <author email="k@ailis.de">Klaus Reimer</author>
   </properties>
   <body>
+    <release version="1.3.1" date="2026-10-18" description="libusb 1.0.30">
+      <action dev="sensorsini" type="update">
+        Build the native library against libusb 1.0.30. libusb 1.0.28 added
+        LIBUSB_SPEED_SUPER_PLUS_X2 (20 Gbit/s, USB 3.2 Gen 2x2) and parsing of
+        the SuperSpeedPlus device capability descriptor. libusb 1.0.30 adds
+        Windows hotplug, WinUSB RAW_IO as per-endpoint calls, and
+        libusb_get_device_string.
+      </action>
+      <action dev="sensorsini" type="add">
+        Wrap SPEED_SUPER_PLUS_X2, the SuperSpeedPlus capability descriptor and
+        its sublink attributes, the platform descriptor, interface association
+        descriptors, initContext, setLogCallback, wrapSysDevice,
+        getMaxAltPacketSize, getDeviceString, getSessionData, and the WinUSB
+        RAW_IO endpoint calls. RAW_IO stays off unless the caller enables it.
+      </action>
+    </release>
     <release version="1.3.0" date="2018-10-07" description="Major update">
       <action dev="kayahr" type="update" date="2018-10-11">
         Renamed os and architecture identifiers to the naming conventions of
